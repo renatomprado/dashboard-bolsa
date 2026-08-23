@@ -4,6 +4,7 @@ import pandas as pd
 from datetime import datetime
 import zoneinfo
 import os
+from urllib.parse import quote
 
 st.set_page_config(page_title="Portfolio Snapshot - B3", layout="wide")
 
@@ -265,10 +266,11 @@ def fmt_br_pct(val):
         return f'<span style="color: #ef4444; font-weight: 600;">-{formatted}%</span>'
     return '<span style="color: #94a3b8;">0,00%</span>'
 
-def build_row_data(ticker, raw_df):
+def get_price_series(ticker, raw_df):
+    """Retorna close/adj_close/high/low/volume (Series) para o ticker, ou None se indisponível."""
     if raw_df is None or raw_df.empty:
         return None
-    
+
     if len(all_tickers) == 1:
         close_series = raw_df["Close"].dropna()
         adj_close_series = raw_df["Adj Close"].dropna() if "Adj Close" in raw_df else close_series
@@ -292,6 +294,32 @@ def build_row_data(ticker, raw_df):
 
     if len(adj_close_series) < 2:
         adj_close_series = close_series
+
+    return close_series, adj_close_series, high_series, low_series, vol_series
+
+MESES_PT = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"]
+
+def build_monthly_history(ticker, raw_df, months=12):
+    """Retorna lista de (rótulo do mês, variação %) com Adj Close, mês a mês."""
+    series = get_price_series(ticker, raw_df)
+    if series is None:
+        return None
+    _, adj_close_series, _, _, _ = series
+
+    monthly_close = adj_close_series.resample("ME").last()
+    monthly_pct = monthly_close.pct_change().dropna() * 100
+    monthly_pct = monthly_pct.tail(months)
+
+    return [
+        (f"{MESES_PT[idx.month - 1]}/{idx.year}", float(val))
+        for idx, val in monthly_pct.items()
+    ]
+
+def build_row_data(ticker, raw_df):
+    series = get_price_series(ticker, raw_df)
+    if series is None:
+        return None
+    close_series, adj_close_series, high_series, low_series, vol_series = series
 
     last_price = float(close_series.iloc[-1])
     prev_close = float(close_series.iloc[-2])
@@ -359,6 +387,47 @@ def build_row_data(ticker, raw_df):
         "ano_var": ano_var,
         "var_12m": var_12m
     }
+
+# --- TELA DE DETALHE: VARIAÇÃO MENSAL DO ATIVO (via clique no código + query param) ---
+selected_ticker = st.query_params.get("ticker")
+
+if selected_ticker:
+    display_ticker = selected_ticker.replace(".SA", "")
+    asset_name = get_asset_short_name(selected_ticker)
+
+    st.html('<a href="?" style="color: #94a3b8; font-size: 14px; text-decoration: none;">&larr; Voltar ao painel</a>')
+    st.title(f"📈 {display_ticker} — {asset_name}")
+    st.caption("Variação mensal (Adj Close, com dividendos/rendimentos) nos últimos 12 meses")
+
+    monthly_rows = None
+    if selected_ticker in all_tickers:
+        monthly_rows = build_monthly_history(selected_ticker, raw_data, months=12)
+
+    if not monthly_rows:
+        st.warning("Sem dados suficientes para este ativo (ou ele não está mais em nenhum grupo configurado).")
+    else:
+        rows_html = "".join(
+            f'''<tr style="background-color: {"#1e293b" if i % 2 == 1 else "#0f172a"};">
+                <td style="padding: 10px 14px; border-bottom: 1px solid #334155; color: #f1f5f9;">{mes}</td>
+                <td style="padding: 10px 14px; border-bottom: 1px solid #334155; text-align: right;">{fmt_br_pct(pct)}</td>
+            </tr>'''
+            for i, (mes, pct) in enumerate(monthly_rows)
+        )
+        st.html(f'''
+        <div style="max-width: 420px; border-radius: 8px; border: 1px solid #1e293b; background: #0b1120; margin-top: 10px; overflow: hidden;">
+        <table style="width: 100%; border-collapse: collapse; font-family: sans-serif; font-size: 14px; color: #f1f5f9;">
+        <thead>
+        <tr style="background-color: #0f172a; color: #94a3b8; font-weight: 600;">
+            <th style="padding: 12px 14px; text-align: left; border-bottom: 2px solid #334155;">Mês</th>
+            <th style="padding: 12px 14px; text-align: right; border-bottom: 2px solid #334155;">Variação (%)</th>
+        </tr>
+        </thead>
+        <tbody>{rows_html}</tbody>
+        </table>
+        </div>
+        ''')
+
+    st.stop()
 
 # --- MONTAGEM DA TABELA HTML: FREEZE HEADER E FREEZE FIRST COLUMN ---
 border_color = "#334155" if enable_dividers else "#1e293b"
@@ -450,7 +519,8 @@ for group in configured_groups:
                 sticky_left_style = ""
 
             if col == "Ativo":
-                html_parts.append(f'<td style="padding: 10px 14px; text-align: left; {sticky_left_style} {border_b}"><span style="background: #0284c7; color: #ffffff; padding: 3px 8px; border-radius: 4px; font-weight: bold; font-size: 12px;">{data["ticker_clean"]}</span></td>')
+                ticker_href = quote(ticker, safe="")
+                html_parts.append(f'<td style="padding: 10px 14px; text-align: left; {sticky_left_style} {border_b}"><a href="?ticker={ticker_href}" style="text-decoration: none;"><span style="background: #0284c7; color: #ffffff; padding: 3px 8px; border-radius: 4px; font-weight: bold; font-size: 12px; cursor: pointer;">{data["ticker_clean"]}</span></a></td>')
             elif col == "Nome":
                 html_parts.append(f'<td style="padding: 10px 10px; text-align: left; color: #cbd5e1; font-weight: 500; max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; {border_b}">{data["name"]}</td>')
             elif col == "Último":
