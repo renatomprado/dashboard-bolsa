@@ -1,0 +1,27 @@
+# ==========================================
+# CONFIGURAÇÕES GERAIS VISUAIS
+# ==========================================
+titulo = Dados de Mercado - RMP
+zebra = true
+linhas_divisorias = true
+colunas = Ativo, Nome, Último, Dia (%), Data/Hora, Mín. Dia, Máx. Dia, Volume, Fech. Ant., Mês (%), Mês Ant. (%), Ano (%), 12 Meses (%)
+
+# ==========================================
+# GRUPOS DE ATIVOS E CORES
+# ==========================================
+
+[Ações RMP]
+cor = #1e3a5f
+tickers = BOVV11.SA, IVVB11.SA, ITUB4.SA
+
+[Fundos Imobiliários (FIIs)]
+cor = #143a2f
+tickers = RZAT11.SA, MFII11.SA, HGLG11.SA
+
+[Moedas & Índices]
+cor = #3b2d54
+tickers = ^BVSP, BRL=X, ^SPX, BTC-USD
+
+[Outras Ações B3]
+cor = #1e3a5f
+tickers = PETR4.SA, VALE3.SA, ITUB4.SA
