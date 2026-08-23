@@ -1,12 +1,13 @@
 import streamlit as st
 import yfinance as yf
 import pandas as pd
+import altair as alt
 from datetime import datetime
 import zoneinfo
 import os
 from urllib.parse import quote
 
-st.set_page_config(page_title="Portfolio Snapshot - B3", layout="wide")
+st.set_page_config(page_title="Dashboard Bolsa RMP", layout="wide")
 
 CONFIG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.txt")
 
@@ -408,19 +409,19 @@ if selected_ticker:
     if not monthly_rows:
         st.warning("Sem dados suficientes para este ativo (ou ele não está mais em nenhum grupo configurado).")
     else:
-        # Ordem cronológica (mais antigo -> mais recente), esquerda para direita,
-        # para casar com a leitura do gráfico de linha logo abaixo.
+        # Tabela: mais recente -> mais antigo, esquerda para direita.
+        table_rows = list(reversed(monthly_rows))
         header_cells = "".join(
             f'<th style="padding: 10px 14px; text-align: right; border-bottom: 2px solid #334155; white-space: nowrap;">{mes}</th>'
-            for mes, _, _, _ in monthly_rows
+            for mes, _, _, _ in table_rows
         )
         var_cells = "".join(
             f'<td style="padding: 10px 14px; border-bottom: 1px solid #334155; text-align: right; white-space: nowrap;">{fmt_br_pct(pct)}</td>'
-            for _, pct, _, _ in monthly_rows
+            for _, pct, _, _ in table_rows
         )
         price_cells = "".join(
             f'<td style="padding: 10px 14px; border-bottom: 1px solid #334155; text-align: right; white-space: nowrap; color: #cbd5e1;">{fmt_clean_num(price, selected_ticker)}</td>'
-            for _, _, price, _ in monthly_rows
+            for _, _, price, _ in table_rows
         )
         st.html(f'''
         <div style="max-width: 100%; overflow-x: auto; border-radius: 8px; border: 1px solid #1e293b; background: #0b1120; margin-top: 10px;">
@@ -446,11 +447,20 @@ if selected_ticker:
         ''')
 
         st.subheader("Gráfico de preços")
-        chart_df = pd.DataFrame(
-            {"Preço": [price for _, _, price, _ in monthly_rows]},
-            index=pd.DatetimeIndex([ts for _, _, _, ts in monthly_rows], name="Mês")
+        # Eixo categórico (não temporal) com ordem explícita: evita o "nice scale" do
+        # Vega-Lite estender o eixo para além do último mês com dado, e mantém os
+        # rótulos em português ("Set/2025") em vez do nome do mês em inglês.
+        meses_ordem = [mes for mes, _, _, _ in monthly_rows]
+        chart_df = pd.DataFrame({
+            "Mês": meses_ordem,
+            "Preço": [price for _, _, price, _ in monthly_rows],
+        })
+        chart = alt.Chart(chart_df).mark_line(point=True, color="#0284c7").encode(
+            x=alt.X("Mês:N", sort=meses_ordem, title=None),
+            y=alt.Y("Preço:Q", title="Preço (R$)"),
+            tooltip=["Mês", "Preço"]
         )
-        st.line_chart(chart_df)
+        st.altair_chart(chart, use_container_width=True)
 
     st.stop()
 
