@@ -314,7 +314,7 @@ def build_monthly_history(ticker, raw_df, months=12):
     rows = []
     for idx, val in monthly_pct.items():
         raw_price = float(monthly_raw.loc[idx]) if idx in monthly_raw.index else None
-        rows.append((f"{MESES_PT[idx.month - 1]}/{idx.year}", float(val), raw_price))
+        rows.append((f"{MESES_PT[idx.month - 1]}/{idx.year}", float(val), raw_price, idx))
     return rows
 
 def build_row_data(ticker, raw_df):
@@ -408,28 +408,49 @@ if selected_ticker:
     if not monthly_rows:
         st.warning("Sem dados suficientes para este ativo (ou ele não está mais em nenhum grupo configurado).")
     else:
-        rows_html = "".join(
-            f'''<tr style="background-color: {"#1e293b" if i % 2 == 1 else "#0f172a"};">
-                <td style="padding: 10px 14px; border-bottom: 1px solid #334155; color: #f1f5f9;">{mes}</td>
-                <td style="padding: 10px 14px; border-bottom: 1px solid #334155; text-align: right;">{fmt_br_pct(pct)}</td>
-                <td style="padding: 10px 14px; border-bottom: 1px solid #334155; text-align: right; color: #cbd5e1;">{fmt_clean_num(price, selected_ticker)}</td>
-            </tr>'''
-            for i, (mes, pct, price) in enumerate(reversed(monthly_rows))
+        # Ordem cronológica (mais antigo -> mais recente), esquerda para direita,
+        # para casar com a leitura do gráfico de linha logo abaixo.
+        header_cells = "".join(
+            f'<th style="padding: 10px 14px; text-align: right; border-bottom: 2px solid #334155; white-space: nowrap;">{mes}</th>'
+            for mes, _, _, _ in monthly_rows
+        )
+        var_cells = "".join(
+            f'<td style="padding: 10px 14px; border-bottom: 1px solid #334155; text-align: right; white-space: nowrap;">{fmt_br_pct(pct)}</td>'
+            for _, pct, _, _ in monthly_rows
+        )
+        price_cells = "".join(
+            f'<td style="padding: 10px 14px; border-bottom: 1px solid #334155; text-align: right; white-space: nowrap; color: #cbd5e1;">{fmt_clean_num(price, selected_ticker)}</td>'
+            for _, _, price, _ in monthly_rows
         )
         st.html(f'''
-        <div style="max-width: 560px; border-radius: 8px; border: 1px solid #1e293b; background: #0b1120; margin-top: 10px; overflow: hidden;">
-        <table style="width: 100%; border-collapse: collapse; font-family: sans-serif; font-size: 14px; color: #f1f5f9;">
+        <div style="max-width: 100%; overflow-x: auto; border-radius: 8px; border: 1px solid #1e293b; background: #0b1120; margin-top: 10px;">
+        <table style="border-collapse: collapse; font-family: sans-serif; font-size: 14px; color: #f1f5f9;">
         <thead>
         <tr style="background-color: #0f172a; color: #94a3b8; font-weight: 600;">
-            <th style="padding: 12px 14px; text-align: left; border-bottom: 2px solid #334155;">Mês</th>
-            <th style="padding: 12px 14px; text-align: right; border-bottom: 2px solid #334155;">Variação (%)</th>
-            <th style="padding: 12px 14px; text-align: right; border-bottom: 2px solid #334155;">Último Preço</th>
+            <th style="padding: 10px 14px; text-align: left; border-bottom: 2px solid #334155; position: sticky; left: 0; background-color: #0f172a; z-index: 5; white-space: nowrap;">Mês</th>
+            {header_cells}
         </tr>
         </thead>
-        <tbody>{rows_html}</tbody>
+        <tbody>
+        <tr style="background-color: #0f172a;">
+            <td style="padding: 10px 14px; border-bottom: 1px solid #334155; position: sticky; left: 0; background-color: #0f172a; z-index: 5; font-weight: 600; white-space: nowrap;">Variação (%)</td>
+            {var_cells}
+        </tr>
+        <tr style="background-color: #1e293b;">
+            <td style="padding: 10px 14px; border-bottom: 1px solid #334155; position: sticky; left: 0; background-color: #1e293b; z-index: 5; font-weight: 600; white-space: nowrap;">Último Preço</td>
+            {price_cells}
+        </tr>
+        </tbody>
         </table>
         </div>
         ''')
+
+        st.subheader("Gráfico de preços")
+        chart_df = pd.DataFrame(
+            {"Preço": [price for _, _, price, _ in monthly_rows]},
+            index=pd.DatetimeIndex([ts for _, _, _, ts in monthly_rows], name="Mês")
+        )
+        st.line_chart(chart_df)
 
     st.stop()
 
