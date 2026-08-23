@@ -457,7 +457,7 @@ if selected_ticker:
         })
         chart = alt.Chart(chart_df).mark_line(point=True, color="#0284c7").encode(
             x=alt.X("Mês:N", sort=meses_ordem, title=None),
-            y=alt.Y("Preço:Q", title="Preço (R$)"),
+            y=alt.Y("Preço:Q", title="Preço (R$)", scale=alt.Scale(zero=False)),
             tooltip=["Mês", "Preço"]
         )
         st.altair_chart(chart, use_container_width=True)
