@@ -397,7 +397,7 @@ if selected_ticker:
 
     st.html('<a href="?" style="color: #94a3b8; font-size: 14px; text-decoration: none;">&larr; Voltar ao painel</a>')
     st.title(f"📈 {display_ticker} — {asset_name}")
-    st.caption("Variação mensal (Adj Close, com dividendos/rendimentos) nos últimos 12 meses")
+    st.subheader("Variação dos últimos 12 meses")
 
     monthly_rows = None
     if selected_ticker in all_tickers:
@@ -411,7 +411,7 @@ if selected_ticker:
                 <td style="padding: 10px 14px; border-bottom: 1px solid #334155; color: #f1f5f9;">{mes}</td>
                 <td style="padding: 10px 14px; border-bottom: 1px solid #334155; text-align: right;">{fmt_br_pct(pct)}</td>
             </tr>'''
-            for i, (mes, pct) in enumerate(monthly_rows)
+            for i, (mes, pct) in enumerate(reversed(monthly_rows))
         )
         st.html(f'''
         <div style="max-width: 420px; border-radius: 8px; border: 1px solid #1e293b; background: #0b1120; margin-top: 10px; overflow: hidden;">
