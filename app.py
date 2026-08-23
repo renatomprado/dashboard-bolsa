@@ -300,8 +300,16 @@ def get_price_series(ticker, raw_df):
 
 MESES_PT = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"]
 
+@st.cache_data(ttl=86400)
+def get_dividend_history(ticker):
+    try:
+        return yf.Ticker(ticker).dividends
+    except Exception:
+        return pd.Series(dtype=float)
+
 def build_monthly_history(ticker, raw_df, months=12):
-    """Retorna lista de (rótulo do mês, variação % c/ Adj Close, último preço bruto do mês)."""
+    """Retorna lista de (rótulo do mês, variação % c/ Adj Close, último preço bruto do mês,
+    data do mês, rendimento/dividendo pago em R$ por cota naquele mês)."""
     series = get_price_series(ticker, raw_df)
     if series is None:
         return None
@@ -312,10 +320,14 @@ def build_monthly_history(ticker, raw_df, months=12):
     monthly_pct = monthly_adj.pct_change().dropna() * 100
     monthly_pct = monthly_pct.tail(months)
 
+    dividends = get_dividend_history(ticker)
+
     rows = []
     for idx, val in monthly_pct.items():
         raw_price = float(monthly_raw.loc[idx]) if idx in monthly_raw.index else None
-        rows.append((f"{MESES_PT[idx.month - 1]}/{idx.year}", float(val), raw_price, idx))
+        month_divs = dividends[(dividends.index.year == idx.year) & (dividends.index.month == idx.month)]
+        dividend_sum = float(month_divs.sum()) if not month_divs.empty else 0.0
+        rows.append((f"{MESES_PT[idx.month - 1]}/{idx.year}", float(val), raw_price, idx, dividend_sum))
     return rows
 
 def build_row_data(ticker, raw_df):
@@ -413,15 +425,19 @@ if selected_ticker:
         table_rows = list(reversed(monthly_rows))
         header_cells = "".join(
             f'<th style="padding: 10px 14px; text-align: right; border-bottom: 2px solid #334155; white-space: nowrap;">{mes}</th>'
-            for mes, _, _, _ in table_rows
+            for mes, _, _, _, _ in table_rows
         )
         var_cells = "".join(
             f'<td style="padding: 10px 14px; border-bottom: 1px solid #334155; text-align: right; white-space: nowrap;">{fmt_br_pct(pct)}</td>'
-            for _, pct, _, _ in table_rows
+            for _, pct, _, _, _ in table_rows
         )
         price_cells = "".join(
             f'<td style="padding: 10px 14px; border-bottom: 1px solid #334155; text-align: right; white-space: nowrap; color: #cbd5e1;">{fmt_clean_num(price, selected_ticker)}</td>'
-            for _, _, price, _ in table_rows
+            for _, _, price, _, _ in table_rows
+        )
+        dividend_cells = "".join(
+            f'<td style="padding: 10px 14px; border-bottom: 1px solid #334155; text-align: right; white-space: nowrap; color: #cbd5e1;">{fmt_clean_num(div, "") if div > 0 else "--"}</td>'
+            for _, _, _, _, div in table_rows
         )
         st.html(f'''
         <div style="max-width: 100%; overflow-x: auto; border-radius: 8px; border: 1px solid #1e293b; background: #0b1120; margin-top: 10px;">
@@ -441,6 +457,10 @@ if selected_ticker:
             <td style="padding: 10px 14px; border-bottom: 1px solid #334155; position: sticky; left: 0; background-color: #1e293b; z-index: 5; font-weight: 600; white-space: nowrap;">Último Preço</td>
             {price_cells}
         </tr>
+        <tr style="background-color: #0f172a;">
+            <td style="padding: 10px 14px; border-bottom: 1px solid #334155; position: sticky; left: 0; background-color: #0f172a; z-index: 5; font-weight: 600; white-space: nowrap;">Rendimento (R$)</td>
+            {dividend_cells}
+        </tr>
         </tbody>
         </table>
         </div>
@@ -450,10 +470,10 @@ if selected_ticker:
         # Eixo categórico (não temporal) com ordem explícita: evita o "nice scale" do
         # Vega-Lite estender o eixo para além do último mês com dado, e mantém os
         # rótulos em português ("Set/2025") em vez do nome do mês em inglês.
-        meses_ordem = [mes for mes, _, _, _ in monthly_rows]
+        meses_ordem = [mes for mes, _, _, _, _ in monthly_rows]
         chart_df = pd.DataFrame({
             "Mês": meses_ordem,
-            "Preço": [price for _, _, price, _ in monthly_rows],
+            "Preço": [price for _, _, price, _, _ in monthly_rows],
         })
         chart = alt.Chart(chart_df).mark_line(point=True, color="#0284c7").encode(
             x=alt.X("Mês:N", sort=meses_ordem, title=None),
