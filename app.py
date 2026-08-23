@@ -271,6 +271,7 @@ def build_row_data(ticker, raw_df):
     
     if len(all_tickers) == 1:
         close_series = raw_df["Close"].dropna()
+        adj_close_series = raw_df["Adj Close"].dropna() if "Adj Close" in raw_df else close_series
         high_series = raw_df["High"].dropna()
         low_series = raw_df["Low"].dropna()
         vol_series = raw_df["Volume"].dropna()
@@ -278,12 +279,19 @@ def build_row_data(ticker, raw_df):
         if ticker not in raw_df["Close"].columns:
             return None
         close_series = raw_df["Close"][ticker].dropna()
+        if "Adj Close" in raw_df and ticker in raw_df["Adj Close"].columns:
+            adj_close_series = raw_df["Adj Close"][ticker].dropna()
+        else:
+            adj_close_series = close_series
         high_series = raw_df["High"][ticker].dropna()
         low_series = raw_df["Low"][ticker].dropna()
         vol_series = raw_df["Volume"][ticker].dropna()
 
     if len(close_series) < 2:
         return None
+
+    if len(adj_close_series) < 2:
+        adj_close_series = close_series
 
     last_price = float(close_series.iloc[-1])
     prev_close = float(close_series.iloc[-2])
@@ -306,29 +314,33 @@ def build_row_data(ticker, raw_df):
     except Exception:
         time_str = close_series.index[-1].strftime("%d/%m %H:%M")
 
-    prev_year_data = close_series[close_series.index.year < current_year]
-    ano_base = float(prev_year_data.iloc[-1]) if not prev_year_data.empty else float(close_series.iloc[0])
-    ano_var = ((last_price / ano_base) - 1) * 100
+    # Variações de período usam Adj Close (preço ajustado por dividendos/rendimentos),
+    # para refletir retorno total do investimento e não só a variação nominal da cotação.
+    adj_last = float(adj_close_series.iloc[-1])
 
-    prev_month_data = close_series[
-        (close_series.index.year < current_year) | 
-        ((close_series.index.year == current_year) & (close_series.index.month < current_month))
+    prev_year_data = adj_close_series[adj_close_series.index.year < current_year]
+    ano_base = float(prev_year_data.iloc[-1]) if not prev_year_data.empty else float(adj_close_series.iloc[0])
+    ano_var = ((adj_last / ano_base) - 1) * 100
+
+    prev_month_data = adj_close_series[
+        (adj_close_series.index.year < current_year) |
+        ((adj_close_series.index.year == current_year) & (adj_close_series.index.month < current_month))
     ]
-    mes_base = float(prev_month_data.iloc[-1]) if not prev_month_data.empty else float(close_series.iloc[0])
-    mes_var = ((last_price / mes_base) - 1) * 100
+    mes_base = float(prev_month_data.iloc[-1]) if not prev_month_data.empty else float(adj_close_series.iloc[0])
+    mes_var = ((adj_last / mes_base) - 1) * 100
 
     if len(prev_month_data) >= 2:
         last_month_idx = prev_month_data.index[-1]
-        prev_prev_data = close_series[close_series.index < last_month_idx.replace(day=1)]
+        prev_prev_data = adj_close_series[adj_close_series.index < last_month_idx.replace(day=1)]
         prev_prev_base = float(prev_prev_data.iloc[-1]) if not prev_prev_data.empty else float(prev_month_data.iloc[0])
         mes_ant_var = ((mes_base / prev_prev_base) - 1) * 100
     else:
         mes_ant_var = 0.0
 
-    one_year_ago_date = close_series.index[-1] - pd.DateOffset(years=1)
-    past_12m = close_series[close_series.index <= one_year_ago_date]
-    base_12m = float(past_12m.iloc[-1]) if not past_12m.empty else float(close_series.iloc[0])
-    var_12m = ((last_price / base_12m) - 1) * 100
+    one_year_ago_date = adj_close_series.index[-1] - pd.DateOffset(years=1)
+    past_12m = adj_close_series[adj_close_series.index <= one_year_ago_date]
+    base_12m = float(past_12m.iloc[-1]) if not past_12m.empty else float(adj_close_series.iloc[0])
+    var_12m = ((adj_last / base_12m) - 1) * 100
 
     asset_name = get_asset_short_name(ticker)
 
