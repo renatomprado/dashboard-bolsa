@@ -322,30 +322,18 @@ def build_row_data(ticker, raw_df):
     ano_base = float(prev_year_data.iloc[-1]) if not prev_year_data.empty else float(adj_close_series.iloc[0])
     ano_var = ((adj_last / ano_base) - 1) * 100
 
-    # Mês (%): variação desde o fechamento do 1º pregão do mês corrente (não o
-    # último fechamento do mês anterior) — convenção conferida contra a InfoMoney
-    # (PETR4: base 03/08 = 1º pregão de agosto, não 31/07).
-    current_month_data = adj_close_series[
-        (adj_close_series.index.year == current_year) & (adj_close_series.index.month == current_month)
+    prev_month_data = adj_close_series[
+        (adj_close_series.index.year < current_year) |
+        ((adj_close_series.index.year == current_year) & (adj_close_series.index.month < current_month))
     ]
-    if not current_month_data.empty:
-        mes_base = float(current_month_data.iloc[0])
-    else:
-        prev_month_data = adj_close_series[
-            (adj_close_series.index.year < current_year) |
-            ((adj_close_series.index.year == current_year) & (adj_close_series.index.month < current_month))
-        ]
-        mes_base = float(prev_month_data.iloc[-1]) if not prev_month_data.empty else float(adj_close_series.iloc[0])
+    mes_base = float(prev_month_data.iloc[-1]) if not prev_month_data.empty else float(adj_close_series.iloc[0])
     mes_var = ((adj_last / mes_base) - 1) * 100
 
-    # Mês Ant. (%): retorno do mês calendário anterior, do 1º ao último pregão dele.
-    prev_month_num = current_month - 1 if current_month > 1 else 12
-    prev_month_year = current_year if current_month > 1 else current_year - 1
-    prev_month_full_data = adj_close_series[
-        (adj_close_series.index.year == prev_month_year) & (adj_close_series.index.month == prev_month_num)
-    ]
-    if len(prev_month_full_data) >= 2:
-        mes_ant_var = ((float(prev_month_full_data.iloc[-1]) / float(prev_month_full_data.iloc[0])) - 1) * 100
+    if len(prev_month_data) >= 2:
+        last_month_idx = prev_month_data.index[-1]
+        prev_prev_data = adj_close_series[adj_close_series.index < last_month_idx.replace(day=1)]
+        prev_prev_base = float(prev_prev_data.iloc[-1]) if not prev_prev_data.empty else float(prev_month_data.iloc[0])
+        mes_ant_var = ((mes_base / prev_prev_base) - 1) * 100
     else:
         mes_ant_var = 0.0
 
