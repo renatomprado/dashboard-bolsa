@@ -300,20 +300,22 @@ def get_price_series(ticker, raw_df):
 MESES_PT = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"]
 
 def build_monthly_history(ticker, raw_df, months=12):
-    """Retorna lista de (rótulo do mês, variação %) com Adj Close, mês a mês."""
+    """Retorna lista de (rótulo do mês, variação % c/ Adj Close, último preço bruto do mês)."""
     series = get_price_series(ticker, raw_df)
     if series is None:
         return None
-    _, adj_close_series, _, _, _ = series
+    close_series, adj_close_series, _, _, _ = series
 
-    monthly_close = adj_close_series.resample("ME").last()
-    monthly_pct = monthly_close.pct_change().dropna() * 100
+    monthly_adj = adj_close_series.resample("ME").last()
+    monthly_raw = close_series.resample("ME").last()
+    monthly_pct = monthly_adj.pct_change().dropna() * 100
     monthly_pct = monthly_pct.tail(months)
 
-    return [
-        (f"{MESES_PT[idx.month - 1]}/{idx.year}", float(val))
-        for idx, val in monthly_pct.items()
-    ]
+    rows = []
+    for idx, val in monthly_pct.items():
+        raw_price = float(monthly_raw.loc[idx]) if idx in monthly_raw.index else None
+        rows.append((f"{MESES_PT[idx.month - 1]}/{idx.year}", float(val), raw_price))
+    return rows
 
 def build_row_data(ticker, raw_df):
     series = get_price_series(ticker, raw_df)
@@ -410,16 +412,18 @@ if selected_ticker:
             f'''<tr style="background-color: {"#1e293b" if i % 2 == 1 else "#0f172a"};">
                 <td style="padding: 10px 14px; border-bottom: 1px solid #334155; color: #f1f5f9;">{mes}</td>
                 <td style="padding: 10px 14px; border-bottom: 1px solid #334155; text-align: right;">{fmt_br_pct(pct)}</td>
+                <td style="padding: 10px 14px; border-bottom: 1px solid #334155; text-align: right; color: #cbd5e1;">{fmt_clean_num(price, selected_ticker)}</td>
             </tr>'''
-            for i, (mes, pct) in enumerate(reversed(monthly_rows))
+            for i, (mes, pct, price) in enumerate(reversed(monthly_rows))
         )
         st.html(f'''
-        <div style="max-width: 420px; border-radius: 8px; border: 1px solid #1e293b; background: #0b1120; margin-top: 10px; overflow: hidden;">
+        <div style="max-width: 560px; border-radius: 8px; border: 1px solid #1e293b; background: #0b1120; margin-top: 10px; overflow: hidden;">
         <table style="width: 100%; border-collapse: collapse; font-family: sans-serif; font-size: 14px; color: #f1f5f9;">
         <thead>
         <tr style="background-color: #0f172a; color: #94a3b8; font-weight: 600;">
             <th style="padding: 12px 14px; text-align: left; border-bottom: 2px solid #334155;">Mês</th>
             <th style="padding: 12px 14px; text-align: right; border-bottom: 2px solid #334155;">Variação (%)</th>
+            <th style="padding: 12px 14px; text-align: right; border-bottom: 2px solid #334155;">Último Preço</th>
         </tr>
         </thead>
         <tbody>{rows_html}</tbody>
