@@ -10,17 +10,17 @@ colunas = Ativo, Nome, Último, Dia (%), Data/Hora, Mín. Dia, Máx. Dia, Volume
 # GRUPOS DE ATIVOS E CORES
 # ==========================================
 
-[Ações RMP]
+[Ápice]
 cor = #1e3a5f
-tickers = BOVV11.SA, IVVB11.SA, ITUB4.SA
+tickers = ^BVSP, BOVV11.SA, IVVB11.SA, ^SPX
 
 [Fundos Imobiliários (FIIs)]
 cor = #143a2f
-tickers = RZAT11.SA, MFII11.SA, HGLG11.SA
+tickers = RZAT11.SA, MFII11.SA, TGAR11.SA, BBGO11.SA
 
-[Moedas & Índices]
+[Moedas & Cryptos]
 cor = #3b2d54
-tickers = ^BVSP, BRL=X, ^SPX, BTC-USD
+tickers = BRL=X, IBIT, BTC-USD
 
 [Outras Ações B3]
 cor = #1e3a5f
