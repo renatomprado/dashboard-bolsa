@@ -349,8 +349,13 @@ def build_row_data(ticker, raw_df):
         t = yf.Ticker(ticker)
         meta = t.history_metadata
         ts = meta.get("regularMarketTime") if isinstance(meta, dict) else None
-        if ts:
-            dt = datetime.fromtimestamp(ts, tz=sao_paulo_tz)
+        if ts is not None:
+            if isinstance(ts, (int, float)):
+                # yfinance mais antigo: epoch Unix.
+                dt = datetime.fromtimestamp(ts, tz=sao_paulo_tz)
+            else:
+                # yfinance atual: já vem como Timestamp com fuso embutido.
+                dt = pd.Timestamp(ts).tz_convert(sao_paulo_tz)
             time_str = dt.strftime("%d/%m %H:%M")
         else:
             time_str = close_series.index[-1].strftime("%d/%m %H:%M")
