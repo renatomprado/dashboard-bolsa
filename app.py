@@ -330,6 +330,25 @@ def build_monthly_history(ticker, raw_df, months=12):
         rows.append((f"{MESES_PT[idx.month - 1]}/{idx.year}", float(val), raw_price, idx, dividend_sum))
     return rows
 
+@st.cache_data(ttl=60)
+def get_market_time(ticker):
+    """Retorna o horário da última cotação (regularMarketTime) ou None se indisponível."""
+    try:
+        t = yf.Ticker(ticker)
+        meta = t.history_metadata
+        ts = meta.get("regularMarketTime") if isinstance(meta, dict) else None
+        if ts is None:
+            return None
+        if isinstance(ts, (int, float)):
+            # yfinance mais antigo: epoch Unix.
+            dt = datetime.fromtimestamp(ts, tz=sao_paulo_tz)
+        else:
+            # yfinance atual: já vem como Timestamp com fuso embutido.
+            dt = pd.Timestamp(ts).tz_convert(sao_paulo_tz)
+        return dt.strftime("%d/%m %H:%M")
+    except Exception:
+        return None
+
 def build_row_data(ticker, raw_df):
     series = get_price_series(ticker, raw_df)
     if series is None:
@@ -344,23 +363,12 @@ def build_row_data(ticker, raw_df):
     
     day_var = ((last_price / prev_close) - 1) * 100
 
-    time_str = "--"
-    try:
-        t = yf.Ticker(ticker)
-        meta = t.history_metadata
-        ts = meta.get("regularMarketTime") if isinstance(meta, dict) else None
-        if ts is not None:
-            if isinstance(ts, (int, float)):
-                # yfinance mais antigo: epoch Unix.
-                dt = datetime.fromtimestamp(ts, tz=sao_paulo_tz)
-            else:
-                # yfinance atual: já vem como Timestamp com fuso embutido.
-                dt = pd.Timestamp(ts).tz_convert(sao_paulo_tz)
-            time_str = dt.strftime("%d/%m %H:%M")
-        else:
-            time_str = close_series.index[-1].strftime("%d/%m %H:%M")
-    except Exception:
-        time_str = close_series.index[-1].strftime("%d/%m %H:%M")
+    # Metadata (regularMarketTime) às vezes falha por bloqueio/rate-limit do Yahoo
+    # no IP do Streamlit Cloud. Nesse caso, close_series.index[-1] é a data do
+    # candle diário (sempre 00:00) — um fallback pior do que mostrar a hora atual.
+    time_str = get_market_time(ticker)
+    if time_str is None:
+        time_str = f"~{datetime.now(tz=sao_paulo_tz).strftime('%d/%m %H:%M')}"
 
     # Variações de período usam Adj Close (preço ajustado por dividendos/rendimentos),
     # para refletir retorno total do investimento e não só a variação nominal da cotação.
