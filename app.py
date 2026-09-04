@@ -337,25 +337,42 @@ def build_monthly_history(ticker, raw_df, months=12):
     return rows
 
 @st.cache_data(ttl=60)
-def get_market_time(ticker):
-    """Retorna o horário da última cotação (regularMarketTime) ou None se indisponível."""
+def fetch_intraday_data(tickers_list):
+    """Lote intradiário (1m) só para saber o horário real da última cotação.
+
+    t.history_metadata (regularMarketTime) exige um "crumb" de autenticação
+    por ticker; no IP compartilhado do Streamlit Cloud isso costuma ser
+    rate-limited (HTTP 429 no crumb, depois 401 em cada ticker). O endpoint
+    de gráfico usado por yf.download (mesmo do fetch_all_data) não depende
+    de crumb e funciona em lote, então usamos ele também para o horário.
+    """
+    if not tickers_list:
+        return None
+    unique_tickers = list(set(tickers_list))
     try:
-        t = yf.Ticker(ticker, session=YF_SESSION)
-        meta = t.history_metadata
-        ts = meta.get("regularMarketTime") if isinstance(meta, dict) else None
-        if ts is None:
-            return None
-        if isinstance(ts, (int, float)):
-            # yfinance mais antigo: epoch Unix.
-            dt = datetime.fromtimestamp(ts, tz=sao_paulo_tz)
-        else:
-            # yfinance atual: já vem como Timestamp com fuso embutido.
-            dt = pd.Timestamp(ts).tz_convert(sao_paulo_tz)
-        return dt.strftime("%d/%m %H:%M")
+        return yf.download(unique_tickers, period="1d", interval="1m", auto_adjust=False, progress=False, session=YF_SESSION)
     except Exception:
         return None
 
-def build_row_data(ticker, raw_df):
+def get_market_time(ticker, intraday_df):
+    if intraday_df is None or intraday_df.empty or "Close" not in intraday_df:
+        return None
+    try:
+        if len(all_tickers) == 1:
+            close_series = intraday_df["Close"].dropna()
+        else:
+            if ticker not in intraday_df["Close"].columns:
+                return None
+            close_series = intraday_df["Close"][ticker].dropna()
+        if close_series.empty:
+            return None
+        return pd.Timestamp(close_series.index[-1]).tz_convert(sao_paulo_tz).strftime("%d/%m %H:%M")
+    except Exception:
+        return None
+
+intraday_data = fetch_intraday_data(all_tickers)
+
+def build_row_data(ticker, raw_df, intraday_df):
     series = get_price_series(ticker, raw_df)
     if series is None:
         return None
@@ -369,10 +386,7 @@ def build_row_data(ticker, raw_df):
     
     day_var = ((last_price / prev_close) - 1) * 100
 
-    # Metadata (regularMarketTime) às vezes falha por bloqueio/rate-limit do Yahoo
-    # no IP do Streamlit Cloud. Nesse caso, close_series.index[-1] é a data do
-    # candle diário (sempre 00:00) — um fallback pior do que mostrar a hora atual.
-    time_str = get_market_time(ticker)
+    time_str = get_market_time(ticker, intraday_df)
     if time_str is None:
         time_str = f"~{datetime.now(tz=sao_paulo_tz).strftime('%d/%m %H:%M')}"
 
@@ -569,7 +583,7 @@ for group in configured_groups:
     """)
 
     for ticker in group["tickers"]:
-        data = build_row_data(ticker, raw_data)
+        data = build_row_data(ticker, raw_data, intraday_data)
         if not data:
             continue
         
