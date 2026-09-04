@@ -226,12 +226,17 @@ def get_asset_short_name(ticker):
     if ticker in custom_names:
         return custom_names[ticker]
     try:
-        t = yf.Ticker(ticker, session=YF_SESSION)
-        meta = t.history_metadata
-        if isinstance(meta, dict) and meta.get("shortName"):
-            return meta.get("shortName")
-        info = t.info
-        return info.get("shortName") or info.get("longName") or ticker.replace(".SA", "")
+        # t.info exige um "crumb" de autenticação (endpoint quoteSummary) que
+        # trava (HTTP 429/401) no IP compartilhado do Streamlit Cloud, e o
+        # bloqueio "envenena" a sessão para as chamadas seguintes. history_metadata
+        # vem do endpoint de gráfico (mesmo do fetch_all_data), não exige crumb
+        # e já traz shortName/longName para ações, FIIs, índices, moedas e cripto.
+        meta = yf.Ticker(ticker, session=YF_SESSION).history_metadata
+        if isinstance(meta, dict):
+            name = meta.get("shortName") or meta.get("longName")
+            if name:
+                return name
+        return ticker.replace(".SA", "")
     except Exception:
         return ticker.replace(".SA", "")
 
