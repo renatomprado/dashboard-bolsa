@@ -3,11 +3,17 @@ import yfinance as yf
 import pandas as pd
 import altair as alt
 from datetime import datetime
+from curl_cffi import requests as cffi_requests
 import zoneinfo
 import os
 from urllib.parse import quote
 
 st.set_page_config(page_title="Dashboard Bolsa RMP", layout="wide")
+
+# Yahoo Finance bloqueia/limita requisições vindas do IP compartilhado do
+# Streamlit Cloud. Uma sessão que imita um navegador real (curl_cffi) contorna
+# esse bloqueio; sem ela, yf.Ticker cai nos fallbacks (ex.: horário "~").
+YF_SESSION = cffi_requests.Session(impersonate="chrome")
 
 CONFIG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.txt")
 
@@ -206,7 +212,7 @@ def fetch_all_data(tickers_list):
     if not tickers_list:
         return None
     unique_tickers = list(set(tickers_list))
-    raw = yf.download(unique_tickers, period="2y", interval="1d", auto_adjust=False, progress=False)
+    raw = yf.download(unique_tickers, period="2y", interval="1d", auto_adjust=False, progress=False, session=YF_SESSION)
     return raw
 
 @st.cache_data(ttl=86400)
@@ -220,7 +226,7 @@ def get_asset_short_name(ticker):
     if ticker in custom_names:
         return custom_names[ticker]
     try:
-        t = yf.Ticker(ticker)
+        t = yf.Ticker(ticker, session=YF_SESSION)
         meta = t.history_metadata
         if isinstance(meta, dict) and meta.get("shortName"):
             return meta.get("shortName")
@@ -303,7 +309,7 @@ MESES_PT = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out"
 @st.cache_data(ttl=86400)
 def get_dividend_history(ticker):
     try:
-        return yf.Ticker(ticker).dividends
+        return yf.Ticker(ticker, session=YF_SESSION).dividends
     except Exception:
         return pd.Series(dtype=float)
 
@@ -334,7 +340,7 @@ def build_monthly_history(ticker, raw_df, months=12):
 def get_market_time(ticker):
     """Retorna o horário da última cotação (regularMarketTime) ou None se indisponível."""
     try:
-        t = yf.Ticker(ticker)
+        t = yf.Ticker(ticker, session=YF_SESSION)
         meta = t.history_metadata
         ts = meta.get("regularMarketTime") if isinstance(meta, dict) else None
         if ts is None:
