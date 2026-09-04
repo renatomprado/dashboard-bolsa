@@ -1,5 +1,5 @@
 streamlit
-yfinance
+yfinance==1.7.0
 pandas
 altair
 curl_cffi

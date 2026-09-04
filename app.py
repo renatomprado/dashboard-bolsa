@@ -231,11 +231,12 @@ def get_asset_short_name(ticker):
         # bloqueio "envenena" a sessão para as chamadas seguintes. history_metadata
         # vem do endpoint de gráfico (mesmo do fetch_all_data), não exige crumb
         # e já traz shortName/longName para ações, FIIs, índices, moedas e cripto.
+        # Não é dict em toda versão do yfinance (virou HistoryMetadata na 1.7.0),
+        # mas sempre suporta .get() — por isso usamos isso em vez de isinstance(dict).
         meta = yf.Ticker(ticker, session=YF_SESSION).history_metadata
-        if isinstance(meta, dict):
-            name = meta.get("shortName") or meta.get("longName")
-            if name:
-                return name
+        name = meta.get("shortName") or meta.get("longName")
+        if name:
+            return name
         return ticker.replace(".SA", "")
     except Exception:
         return ticker.replace(".SA", "")
