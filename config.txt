@@ -23,5 +23,5 @@ cor = #3b2d54
 tickers = BRL=X, EURBRL=X, IBIT, BTC-USD
 
 [Outras Ações B3]
-cor = #1e3a5f
+cor = #f30d5b
 tickers = PETR4.SA, VALE3.SA, ITUB4.SA
