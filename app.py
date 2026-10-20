@@ -6,6 +6,11 @@ from datetime import datetime
 from curl_cffi import requests as cffi_requests
 import zoneinfo
 import os
+import io
+import json
+import base64
+import urllib.request
+import urllib.error
 from urllib.parse import quote
 
 st.set_page_config(page_title="Dashboard Bolsa RMP", layout="wide")
@@ -33,6 +38,82 @@ ALL_AVAILABLE_COLUMNS = [
     "12 Meses (%)"
 ]
 
+# --- PERSISTÊNCIA NO GITHUB ---
+# O disco do Streamlit Cloud é efêmero: um config.txt gravado só no servidor some
+# no próximo reinício. Com GH_TOKEN nos Secrets, "Salvar" grava o config.txt no
+# GitHub, na branch GH_BRANCH (padrão "config", separada da master para que salvar
+# não dispare um novo deploy do app), e a leitura vem de lá.
+def _gh_conf():
+    try:
+        token = st.secrets.get("GH_TOKEN")
+        if not token:
+            return None
+        return {
+            "token": token,
+            "repo": st.secrets.get("GH_REPO", "renatomprado/dashboard-bolsa"),
+            "branch": st.secrets.get("GH_BRANCH", "config"),
+            "base": st.secrets.get("GH_BASE_BRANCH", "master"),
+        }
+    except Exception:
+        return None
+
+def _gh_req(conf, metodo, caminho, corpo=None):
+    req = urllib.request.Request(
+        f"https://api.github.com/repos/{conf['repo']}/{caminho}",
+        data=json.dumps(corpo).encode("utf-8") if corpo is not None else None,
+        method=metodo,
+        headers={
+            "Authorization": f"Bearer {conf['token']}",
+            "Accept": "application/vnd.github+json",
+            "X-GitHub-Api-Version": "2022-11-28",
+            "User-Agent": "dashboard-bolsa",
+        },
+    )
+    with urllib.request.urlopen(req, timeout=15) as r:
+        return json.loads(r.read().decode("utf-8"))
+
+@st.cache_data(ttl=30)
+def _gh_ler_config():
+    """Texto do config.txt na branch de configuração; None se não houver token ou arquivo."""
+    conf = _gh_conf()
+    if not conf:
+        return None
+    try:
+        d = _gh_req(conf, "GET", f"contents/config.txt?ref={quote(conf['branch'])}")
+        return base64.b64decode(d["content"]).decode("utf-8")
+    except Exception:
+        return None
+
+def _gh_gravar_config(texto):
+    conf = _gh_conf()
+    # cria a branch de configuração a partir da base, se ainda não existir
+    try:
+        _gh_req(conf, "GET", f"git/ref/heads/{quote(conf['branch'])}")
+    except urllib.error.HTTPError as e:
+        if e.code != 404:
+            raise
+        sha = _gh_req(conf, "GET", f"git/ref/heads/{quote(conf['base'])}")["object"]["sha"]
+        _gh_req(conf, "POST", "git/refs", {"ref": f"refs/heads/{conf['branch']}", "sha": sha})
+    corpo = {
+        "message": "Atualiza config.txt pelo painel",
+        "content": base64.b64encode(texto.encode("utf-8")).decode("ascii"),
+        "branch": conf["branch"],
+    }
+    try:
+        corpo["sha"] = _gh_req(conf, "GET", f"contents/config.txt?ref={quote(conf['branch'])}")["sha"]
+    except urllib.error.HTTPError as e:
+        if e.code != 404:
+            raise
+    _gh_req(conf, "PUT", "contents/config.txt", corpo)
+    _gh_ler_config.clear()
+
+def _texto_config():
+    texto = _gh_ler_config()
+    if texto is not None:
+        return texto
+    with open(CONFIG_FILE, "r", encoding="utf-8") as f:
+        return f.read()
+
 # --- FUNÇÕES DE PERSISTÊNCIA DO ARQUIVO TXT ---
 def load_config():
     default_config = {
@@ -59,7 +140,7 @@ def load_config():
         ]
     }
     
-    if not os.path.exists(CONFIG_FILE):
+    if not os.path.exists(CONFIG_FILE) and _gh_ler_config() is None:
         save_config(
             default_config["titulo"],
             default_config["zebra"],
@@ -77,7 +158,7 @@ def load_config():
     current_group = None
 
     try:
-        with open(CONFIG_FILE, "r", encoding="utf-8") as f:
+        with io.StringIO(_texto_config()) as f:
             for line in f:
                 line = line.strip()
                 if not line or line.startswith("#"):
@@ -148,8 +229,11 @@ def save_config(titulo, zebra, linhas_divisorias, colunas, grupos):
         lines.append(f"tickers = {', '.join(g['tickers'])}")
         lines.append("")
 
+    texto = "\n".join(lines)
     with open(CONFIG_FILE, "w", encoding="utf-8") as f:
-        f.write("\n".join(lines))
+        f.write(texto)
+    if _gh_conf():
+        _gh_gravar_config(texto)
 
 config_data = load_config()
 
@@ -197,8 +281,14 @@ for idx, group in enumerate(config_data["grupos"], 1):
 col_save, col_reload = st.sidebar.columns(2)
 with col_save:
     if st.button("💾 Salvar TXT", use_container_width=True):
-        save_config(app_title, enable_zebra, enable_dividers, selected_columns, configured_groups)
-        st.sidebar.success("Configurações salvas no config.txt!")
+        try:
+            save_config(app_title, enable_zebra, enable_dividers, selected_columns, configured_groups)
+            if _gh_conf():
+                st.sidebar.success("Configurações salvas no GitHub!")
+            else:
+                st.sidebar.warning("Salvo só no servidor (some no reinício): falta GH_TOKEN nos Secrets.")
+        except Exception as e:
+            st.sidebar.error(f"Não consegui gravar no GitHub: {e}")
 with col_reload:
     if st.button("🔄 Atualizar", use_container_width=True):
         st.cache_data.clear()
